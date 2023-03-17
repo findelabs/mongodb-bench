@@ -1234,21 +1234,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mongo-bench"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "clap",
- "env_logger",
- "futures",
- "log",
- "metrics-runtime",
- "mongodb",
- "serde_json",
- "tokio 1.26.0",
-]
-
-[[package]]
 name = "mongodb"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1293,6 +1278,22 @@ dependencies = [
  "typed-builder",
  "uuid",
  "webpki-roots",
+]
+
+[[package]]
+name = "mongodb-bench"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "clap",
+ "env_logger",
+ "futures",
+ "log",
+ "metrics-core",
+ "metrics-runtime",
+ "mongodb",
+ "serde_json",
+ "tokio 1.26.0",
 ]
 
 [[package]]

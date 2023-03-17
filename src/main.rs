@@ -3,14 +3,14 @@ use env_logger::{Builder, Target};
 use chrono::Local;
 use std::io::Write;
 use log::LevelFilter;
-use mongodb::{Client, options::ClientOptions};
+use mongodb::{Client, options::ClientOptions, options::FindOptions};
 use mongodb::bson::{Document, to_document};
 use serde_json::Value;
 use metrics_runtime::Receiver;
 use metrics_runtime::observers::JsonBuilder;
-use metrics_runtime::exporters::LogExporter;
-use std::{time::Duration};
-use log::Level;
+use metrics_core::{Builder as MetricsBuilder, Observe, Drain};
+use tokio::time::{sleep, Duration};
+
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
@@ -37,7 +37,15 @@ pub struct Args {
 
    /// Collection to execute queries against
    #[arg(short, long)]
-   collection: String
+   collection: String,
+
+   /// Time to pause between query loops in ms
+   #[arg(short, long, default_value_t = 0)]
+   pause: u64,
+
+   /// Number of documents to limit response to
+   #[arg(short, long, default_value_t = 10)]
+   limit: i64
 }
 
 #[tokio::main]
@@ -63,11 +71,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // Create monitoring
     let receiver = Receiver::builder().build().expect("failed to create receiver");
-    let sink = receiver.sink();
+//    let sink = receiver.sink();
 
     // Generate query Document
-    let value: Value = serde_json::from_str(&args.query)?;
-    let query = to_document(&value)?;
+    let query: Vec<Value> = serde_json::from_str(&args.query)?;
+//    let query = to_document(&value)?;
 
     // Parse a connection string into an options struct.
     let mut client_options = ClientOptions::parse(args.url).await?;
@@ -87,40 +95,65 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Create vector for task handles
     let mut handles = vec![];
 
+    let find_options = FindOptions::builder()
+        .limit(args.limit)
+        .build();
+
     for t in 0..args.threads {
         log::info!("\"Creating thread {}\"", t);
 
         // Create clones of all necessary vars
         let coll = collection.clone();
         let query = query.clone();
-        let mut sink = sink.clone();
+        let mut sink = receiver.sink();
+        let pause = args.pause;
+        let find_options = find_options.clone();
 
         // Create thread
         handles.push(tokio::spawn(async move {
 
             // Create query loop
             for i in 0..args.iterations {
-                let start = sink.now();
-                if let Err(e) = coll.find(query.clone(), None).await {
-                    log::error!("\"Error running query: {}\"", e);
-                };
-                let end = sink.now();
-                log::info!("\"Completed query attempt {}, from thread {}, in {}ms\"", i, t, (end - start) / 1000000);
-                sink.record_timing("query", start, end);
+
+                // Loop over query array
+                for (c, q) in query.clone().into_iter().enumerate() {
+                    let doc = match to_document(&q) {
+                        Ok(convert) => convert,
+                        Err(e) => {
+                            log::error!("Unable to convert query array item into Document: {}", e);
+                            continue
+                        }
+                    };
+
+                    let start = sink.now();
+
+                    // Run find
+                    if let Err(e) = coll.find(doc, Some(find_options.clone())).await {
+                        log::error!("\"Error running query: {}\"", e);
+                    };
+
+                    let end = sink.now();
+                    log::info!("\"Completed query attempt {}, within loop {}, from thread {}, in {}ms\"", c + 1, i, t, (end - start) / 1000000);
+                    sink.record_timing("query histogram", start, end);
+                    sink.increment_counter("query count", 1);
+    
+                    // Pause between loops
+                    sleep(Duration::from_millis(pause)).await;
+                }
             }
         }));
     }
 
     // Wait for all threads to finish
+    log::debug!("Waiting for all threads to complete");
     futures::future::join_all(handles).await;
+    log::debug!("All threads have completed");
 
     // Now create our exporter/observer configuration, and print out results
-    LogExporter::new(
-        receiver.controller(),
-        JsonBuilder::new(),
-        Level::Info,
-        Duration::from_secs(5),
-    ).turn();
+    let mut observer = JsonBuilder::new().build();
+    receiver.controller().observe(&mut observer);
+    let output = observer.drain();
+    log::info!("{}", output);
 
     Ok(())
 }
