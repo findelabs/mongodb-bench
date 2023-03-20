@@ -2,8 +2,10 @@
 
 A simple app to run simple queries against MongoDB.
 
+
+## Usage
 ```
-Usage: mongo-bench [OPTIONS] --url <URL> --query <QUERY> --database <DATABASE> --collection <COLLECTION>
+Usage: mongodb-bench [OPTIONS] --url <URL> --query <QUERY> --database <DATABASE> --collection <COLLECTION>
 
 Options:
   -i, --iterations <ITERATIONS>  Iterations of test [default: 10]
@@ -12,6 +14,16 @@ Options:
   -q, --query <QUERY>            Query to execute
   -d, --database <DATABASE>      Database to execute queries against
   -c, --collection <COLLECTION>  Collection to execute queries against
+  -p, --pause <PAUSE>            Time to pause between query loops in ms [default: 0]
+  -l, --limit <LIMIT>            Number of documents to limit response to [default: 10]
   -h, --help                     Print help
   -V, --version                  Print version
   ````
+
+### Example: 
+
+This example benchmark will run 100 threads, with 100 iterations, over the query `{"module_setup":true}`:
+
+```
+cargo run --release -- --url 'mongodb+srv://<username>:<password>@cluster1-prd-rs.cd1c4x.mongodb.net/?retryWrites=true&w=majority' --query '[{"module_setup":true}]' --database my_database --collection my_collection --iterations 100 --threads 100 --limit 1
+```
