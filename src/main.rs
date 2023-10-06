@@ -31,6 +31,14 @@ pub struct Args {
    #[arg(short, long)]
    query: String,
 
+   /// Collation for query
+   #[arg(short, long)]
+   collation: Option<String>,
+
+   /// Sort for query
+   #[arg(short, long)]
+   sort: Option<String>,
+
    /// Database to execute queries against
    #[arg(short, long)]
    database: String,
@@ -95,8 +103,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Create vector for task handles
     let mut handles = vec![];
 
+    let collation = match args.collation {
+        Some(c) => serde_json::from_str(&c).expect("Failed serializing collation value"),
+        None => None
+    };
+
+    let sort = match args.sort {
+        Some(c) => serde_json::from_str(&c).expect("Failed serializing sort value"),
+        None => None
+    };
+
     let find_options = FindOptions::builder()
         .limit(args.limit)
+        .sort(sort)
+        .collation(collation)
         .build();
 
     for t in 0..args.threads {
